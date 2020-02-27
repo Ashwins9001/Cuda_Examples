@@ -3,8 +3,9 @@
 using namespace std;
 #include <device_launch_parameters.h>
 
-//defn constant
-#define N 10
+//defn constant, thread limit
+#define N 65535
+
 
 __global__ void add(int* a, int* b, int* c)
 {
@@ -40,22 +41,25 @@ int main(void) {
 	}
 
 	//Copy local values over into dev_ptr and send to kernel
-	cudaMemcpy(a, dev_a, sizeof(int) * N, cudaMemcpyHostToDevice);
-	cudaMemcpy(b, dev_b, sizeof(int) * N, cudaMemcpyHostToDevice);
-	cudaMemcpy(c, dev_c, sizeof(int) * N, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_a, a, sizeof(int) * N, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_b, b, sizeof(int) * N, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_c, c, sizeof(int) * N, cudaMemcpyHostToDevice);
 
 	//Invoke device, N within <<<>>> defines N blocks are allocated to run in parallel
-	add << <N, 1 >> > (dev_a, dev_b, dev_c);
+	add <<<N, 1 >>> (dev_a, dev_b, dev_c);
 
 	//Copy device values from dev_ptr back to local host
-	cudaMemcpy(dev_c, c, sizeof(int) * N, cudaMemcpyDeviceToHost);
+	cudaMemcpy(c, dev_c, sizeof(int) * N, cudaMemcpyDeviceToHost);
 
 	for (int i = 0; i < N; i++)
 	{
 		cout << "Element at " << i << " is: " << c[i] << endl;
 	}
 
+	//Free GPU space 
 	cudaFree(dev_a);
 	cudaFree(dev_b);
 	cudaFree(dev_c);
 }
+
+
