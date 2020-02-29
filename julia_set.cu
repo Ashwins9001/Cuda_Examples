@@ -6,9 +6,9 @@ using namespace std;
 
 #define DIM 1000
 
-struct cuComplex {
+__device__ struct cuComplex {
 	float r, i;
-	cuComplex(float a, float b) : r(a), i(b) {}
+	__device__ cuComplex(float a, float b) : r(a), i(b) {}
 	__device__ float magnitude2(void) { return r * r + i * i; }
 
 	//Operator overloading to define custom operations on struc when used 
@@ -19,28 +19,12 @@ struct cuComplex {
 		//Image comp get scaled by remaining real 
 		return cuComplex(r*a.r - i * a.i, i*a.r + r * a.i);
 	}
-
 	__device__ cuComplex operator+(const cuComplex& a)
 	{
 		return cuComplex(r + a.r, i + a.i);
 	}
 };
 
-
-__global__ void kernel(unsigned char* ptr) {
-	int x = blockIdx.x;
-	int y = blockIdx.y;
-	//Dim equal to image size, one block per pixel therefore can iterate via IDs
-	//Define offset to incr ptr by, determine current location in grid by IDs and dimension, then per elem iterate through four floats at that point
-	int offset = x + y * gridDim.x;
-
-	int juliaVal = julia(x, y);
-	//Each elem float, offset by four spaces at each ID then iterate through its bits 
-	ptr[offset * 4 + 0] = 255 * juliaVal;
-	ptr[offset * 4 + 1] = 0;
-	ptr[offset * 4 + 2] = 0;
-	ptr[offset * 4 + 3] = 255;
-}
 
 //Ensure func ran on device 
 __device__ int julia(int x, int y)
@@ -69,7 +53,22 @@ __device__ int julia(int x, int y)
 			return 0;
 	}
 	return -1;
+}
 
+
+__global__ void kernel(unsigned char *ptr) {
+	int x = blockIdx.x;
+	int y = blockIdx.y;
+	//Dim equal to image size, one block per pixel therefore can iterate via IDs
+	//Define offset to incr ptr by, determine current location in grid by IDs and dimension, then per elem iterate through four floats at that point
+	int offset = x + y * gridDim.x;
+
+	int juliaVal = julia(x, y);
+	//Each elem float, offset by four spaces at each ID then iterate through its bits 
+	ptr[offset * 4 + 0] = 255 * juliaVal;
+	ptr[offset * 4 + 1] = 0;
+	ptr[offset * 4 + 2] = 0;
+	ptr[offset * 4 + 3] = 255;
 }
 
 int main(void) {
@@ -82,7 +81,7 @@ int main(void) {
 	//(DIM, DIM) = block of dim: DIM X DIM X 1
 	dim3 grid(DIM, DIM);
 	//Each point of Julia set check computed indepedent of another, pass 2D grid and kernel will create func copies equivalent to size
-	kernel <<<grid, 1 >>>(dev_bitmap);
+	kernel<<<grid, 1 >>>(dev_bitmap);
 	cudaMemcpy(bitmap.get_ptr(), dev_bitmap, bitmap.image_size(), cudaMemcpyDeviceToHost);
 	bitmap.display_and_exit();
 	cudaFree(dev_bitmap);
