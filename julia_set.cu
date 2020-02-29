@@ -6,7 +6,7 @@ using namespace std;
 
 #define DIM 1000
 
-__device__ struct cuComplex {
+struct cuComplex {
 	float r, i;
 	__device__ cuComplex(float a, float b) : r(a), i(b) {}
 	__device__ float magnitude2(void) { return r * r + i * i; }
@@ -52,7 +52,7 @@ __device__ int julia(int x, int y)
 		if (a.magnitude2() > 1000)
 			return 0;
 	}
-	return -1;
+	return 1;
 }
 
 
