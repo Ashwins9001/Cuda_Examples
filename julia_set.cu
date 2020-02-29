@@ -6,38 +6,44 @@ using namespace std;
 
 #define DIM 1000
 
-int main(void) {
-	CPUBitmap bitmap(DIM, DIM);
-	//get current location on bitmap and pass to kernel
-	unsigned char *ptr = bitmap.get_ptr();
+struct cuComplex {
+	float r, i;
+	cuComplex(float a, float b) : r(a), i(b) {}
+	__device__ float magnitude2(void) { return r * r + i * i; }
 
-
-
-	kernel(ptr);
-	bitmap.display_and_exit();
-}
-
-void kernel(unsigned char* ptr) {
-	for (int y = 0; y < DIM; y++)
+	//Operator overloading to define custom operations on struc when used 
+	//Automatically called when used b/w struc
+	__device__ cuComplex operator*(const cuComplex& a)
 	{
-		for (int x = 0; x < DIM; x++)
-		{
-			int offset = x + y * DIM;
-			int juliaVal = julia(x, y);
-			//increment by blocks of four each time and fill adj bitmap cells
-			//call Julia on each to determine if point is within set or not 
-			//Remember for each point of Julia set, it gets iterated and check whether it grows toward infinity or converges 
-			//Set consist of all converging points and outer edges form fractal 
-			//RGB val, if juliaVal = 1: red, else black
-			ptr[offset * 4 + 0] = 255 * juliaValue;
-			ptr[offset * 4 + 1] = 0;
-			ptr[offset * 4 + 2] = 0;
-			ptr[offset * 4 + 3] = 255;
-		}
+		//Real comp multiply, imag comp become negative prod (j * j = (((sqrt(-1))^2))
+		//Image comp get scaled by remaining real 
+		return cuComplex(r*a.r - i * a.i, i*a.r + r * a.i);
 	}
+
+	__device__ cuComplex operator+(const cuComplex& a)
+	{
+		return cuComplex(r + a.r, i + a.i);
+	}
+};
+
+
+__global__ void kernel(unsigned char* ptr) {
+	int x = blockIdx.x;
+	int y = blockIdx.y;
+	//Dim equal to image size, one block per pixel therefore can iterate via IDs
+	//Define offset to incr ptr by, determine current location in grid by IDs and dimension, then per elem iterate through four floats at that point
+	int offset = x + y * gridDim.x;
+
+	int juliaVal = julia(x, y);
+	//Each elem float, offset by four spaces at each ID then iterate through its bits 
+	ptr[offset * 4 + 0] = 255 * juliaVal;
+	ptr[offset * 4 + 1] = 0;
+	ptr[offset * 4 + 2] = 0;
+	ptr[offset * 4 + 3] = 255;
 }
 
-int julia(int x, int y)
+//Ensure func ran on device 
+__device__ int julia(int x, int y)
 {
 	const float scale = 1.5;
 	//Shift pixel coordinate to one located in complex space
@@ -66,22 +72,19 @@ int julia(int x, int y)
 
 }
 
-struct cuComplex {
-	float r, i;
-	cuComplex(float a, float b) : r(a), i(b) {}
-	float magnitude2(void) { return r * r + i * i; }
+int main(void) {
+	CPUBitmap bitmap(DIM, DIM);
+	//Create ptr to bitmap, then allocate GPU space for entire grid size (length * width) multiplied by four (store float at each elem)
+	unsigned char *dev_bitmap;
+	//Set block to image size for easy iteration later 
+	cudaMalloc((void**)&dev_bitmap, bitmap.image_size());
+	//dim3 special CUDA datatype: pass grid and block dimensions, all default to 1; essentially 3-elem vec
+	//(DIM, DIM) = block of dim: DIM X DIM X 1
+	dim3 grid(DIM, DIM);
+	//Each point of Julia set check computed indepedent of another, pass 2D grid and kernel will create func copies equivalent to size
+	kernel <<<grid, 1 >>>(dev_bitmap);
+	cudaMemcpy(bitmap.get_ptr(), dev_bitmap, bitmap.image_size(), cudaMemcpyDeviceToHost);
+	bitmap.display_and_exit();
+	cudaFree(dev_bitmap);
+}
 
-	//Operator overloading to define custom operations on struc when used 
-	//Automatically called when used b/w struc
-	cuComplex operator*(const cuComplex& a)
-	{
-		//Real comp multiply, imag comp become negative prod (j * j = (((sqrt(-1))^2))
-		//Image comp get scaled by remaining real 
-		return cuComplex(r*a.r - i * a.i, i*a.r + r * a.i);
-	}
-
-	cuComplex operator+(const cuComplex& a)
-	{
-		return cuComplex(r + a.r, i + a.i);
-	}
-};
