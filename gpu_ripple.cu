@@ -17,17 +17,7 @@ void cleanup(DataBlock *d)
 	cudaFree(d->dev_bitmap);
 }
 
-void generate_frame(DataBlock *d, int render)
-{
-	//Create 2D grid of blocks, for every 16 threads there exists one
-	dim3 blocks(DIM / 16, DIM / 16);
-	dim3 threads(16, 16);
-	kernel<<<blocks, threads >>>(d->dev_bitmap, render);
-	//Copy contents at current render/frame, into dev bitmap for changing frame and computations 
-	cudaMemcpy(d->bitmap->get_ptr(), d->dev_bitmap, d->bitmap->image_size(), cudaMemcpyDeviceToHost);
-}
-
-	
+//Call kernel each time for a thread, each thread mapped to pixel which is animated 
 __global__ void kernel(unsigned char *ptr, int ticks)
 {
 	//Index one of the threads to an image pos
@@ -46,6 +36,17 @@ __global__ void kernel(unsigned char *ptr, int ticks)
 	ptr[offset * 4 + 1] = grey;
 	ptr[offset * 4 + 2] = grey;
 	ptr[offset * 4 + 3] = 255;
+}
+
+//Continuously generate frames as required by window, constantly creating threads for image gen, copying output pix to host, then destroying all processes and repeating
+void generate_frame(DataBlock *d, int render)
+{
+	//Create 2D grid of blocks, for every 16 threads there exists one
+	dim3 blocks(DIM / 16, DIM / 16);
+	dim3 threads(16, 16);
+	kernel<<<blocks, threads >>>(d->dev_bitmap, render);
+	//Copy contents at current render/frame, into dev bitmap for changing frame and computations 
+	cudaMemcpy(d->bitmap->get_ptr(), d->dev_bitmap, d->bitmap->image_size(), cudaMemcpyDeviceToHost);
 }
 
 int main(void)
