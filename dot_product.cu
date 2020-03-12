@@ -8,8 +8,6 @@ using namespace std;
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-
-
 /*
 CUDA C has a __shared__ memory section where a copy of var is made for each block & threads within a block can all access var but cannot see or modify copy in other blocks
 Must synchronize, if thread A writes to var and thread B wants to modify, must wait and ensure write is done else race condition occurs where correctness of var unknown
@@ -28,6 +26,7 @@ __global__ void dot(float *a, float *b, float *c)
 	int threadID = threadIdx.x + blockIdx.x * blockDim.x;
 	int cacheID = threadIdx.x;
 	float temp = 0;
+
 	//iteratively take sum of products (dot prod) by creating threads for each arr elem
 	//all threads will technically run at same hardware location, however abstract into larger set incase vector exceeds length
 	//for small enough vals each thread theoretically computes single sum, yet again for large vecs, can continue greater iterations
@@ -37,6 +36,8 @@ __global__ void dot(float *a, float *b, float *c)
 		threadID += blockDim.x * gridDim.x;
 	}
 	cache[cacheID] = temp; //shared mem buffer to store running sum per thread 
+	__syncthreads(); //Sync threads for blocks to ensure cache done being written to by all parallel processes
+
 	//Apply reduction to sum vals, whereby input arr made into smaller output arr
 	//Apply multiple threads for sum, each one adds two vals of cache[], resulting in log2(threadsPerBlock) steps 
 	//Each thread does two computations, therefore 2x per thread. There are threadsPerBlock running in parallel, thus 2^threadsPerBlock computations being done per step
@@ -47,9 +48,10 @@ __global__ void dot(float *a, float *b, float *c)
 		{
 			cache[cacheID] += cache[cacheID + i]; //add curr cache val to ith 
 		}
-		__syncthreads();
+		__syncthreads(); //sync threads again per each iteration to ensure cache data correct before mod
 		i /= 2; //every other cache index
 	}
+
 	//Final reduction, each block has single sum left & store to global mem, use single thread rather than multiple for writing to reduce mem req
 	//Typically in better programs, GPU stops summing once it's reached a small enough number as threads used << threads available (e.g. using 32 out of 256 threads)
 	//In that case, work passed on to CPU to quickly run remaining sum sequentially
