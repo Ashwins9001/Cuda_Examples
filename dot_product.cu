@@ -61,12 +61,12 @@ __global__ void dot(float *a, float *b, float *c)
 
 int main(void) {
 	float *a, *b, c, *partial_c;
-	float *dev_a, *dev_b, *dev_partial_c;
+	float *dev_a, *dev_b, *dev_partial_c; //dev_partial_c gets populated by cache[0] of each block running post reduction
 	
 	//Allocate CPU mem
 	a = new float[N];
 	b = new float[N];
-	partial_c = new float[blocksPerGrid]; //arr of ptrs to blocks
+	partial_c = new float[blocksPerGrid]; //ptr to arr
 
 	//Allocate GPU mem for vec dot-prod & blocks
 	cudaMalloc((void**)&dev_a, N * sizeof(float));
@@ -86,5 +86,28 @@ int main(void) {
 	
 	//Call kernel
 	dot << <blocksPerGrid, threadsPerBlock >> > (dev_a, dev_b, dev_partial_c);
+
+	//Copy back from dev to host
+	cudaMemcpy(partial_c, dev_partial_c, blocksPerGrid * sizeof(float), cudaMemcpyDeviceToHost); //reassign ptr to go to same arr of partial sums
+	c = 0;
+	for (int i = 0; i < blocksPerGrid; i++) //iterate through all partial sums
+	{
+		c += partial_c[i];
+	}
+	//To check dot product, can apply Discrete Fourier Transform to sum prod from n = 0 to N-1 elem of two vecs
+	//Check similarity of two vectors or signals in N-dim
+	//Dot prod equal to two * (sum of squares of int from n = 0 to N-1), whereby sum of squares of continuous nums = n(n+1)(2n+1) / 6
+#define sum_squares(n) ((n * (n + 1) * (2*n + 1) ) / 6)
+	printf("Does GPU value %.6g  = %.6g?\n", c, 2 * sum_squares((float)(N - 1)));
+
+	//Free GPU mem
+	cudaFree(dev_a);
+	cudaFree(dev_b);
+	cudaFree(dev_partial_c);
+
+	//Free CPU mem
+	delete[] a;
+	delete[] b;
+	delete[] partial_c;
 
 }
