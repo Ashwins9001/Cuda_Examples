@@ -20,6 +20,7 @@ Addl shared mem buffers are physically on GPU, as opposed to off-chip DRAM which
 
 const int N = 33 * 1024;
 const int threadsPerBlock = 256;
+const int blocksPerGrid = imin(32, (N + threadsPerBlock - 1) / threadsPerBlock); // use either all blocks if N large, or calc req blocks by taking smallest multiple of N
 
 __global__ void dot(float *a, float *b, float *c)
 {
@@ -49,11 +50,41 @@ __global__ void dot(float *a, float *b, float *c)
 		__syncthreads();
 		i /= 2; //every other cache index
 	}
-	//Final reduction, each block has single sum left & store to global mem
+	//Final reduction, each block has single sum left & store to global mem, use single thread rather than multiple for writing to reduce mem req
+	//Typically in better programs, GPU stops summing once it's reached a small enough number as threads used << threads available (e.g. using 32 out of 256 threads)
+	//In that case, work passed on to CPU to quickly run remaining sum sequentially
 	if (cacheID == 0)
 	{
 		c[blockIdx.x] = cache[0]; //send to curr block 
 	}
 }
 
-int main(void) {}
+int main(void) {
+	float *a, *b, c, *partial_c;
+	float *dev_a, *dev_b, *dev_partial_c;
+	
+	//Allocate CPU mem
+	a = new float[N];
+	b = new float[N];
+	partial_c = new float[blocksPerGrid]; //arr of ptrs to blocks
+
+	//Allocate GPU mem for vec dot-prod & blocks
+	cudaMalloc((void**)&dev_a, N * sizeof(float));
+	cudaMalloc((void**)&dev_b, N * sizeof(float));
+	cudaMalloc((void**)&dev_partial_c, blocksPerGrid * sizeof(float));
+
+	//Fill vecs
+	for (int i = 0; i < N; i++)
+	{
+		a[i] = i;
+		b[i] = i * i;
+	}
+
+	//Send to dev
+	cudaMemcpy(dev_a, a, N * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_b, b, N * sizeof(float), cudaMemcpyHostToDevice);
+	
+	//Call kernel
+	dot << <blocksPerGrid, threadsPerBlock >> > (dev_a, dev_b, dev_partial_c);
+
+}
